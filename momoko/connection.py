@@ -30,6 +30,12 @@ from psycopg2.extensions import POLL_OK, POLL_READ, POLL_WRITE
 from tornado.ioloop import IOLoop
 from tornado.concurrent import chain_future, Future
 
+try:
+    from tornado.concurrent import future_set_exc_info
+except ImportError:
+    def future_set_exc_info(future, exc_info):
+        future.set_exc_info(exc_info)
+
 from .exceptions import PoolError, PartiallyConnectedError
 
 log = logging.getLogger('momoko')
@@ -461,7 +467,7 @@ class Pool(object):
             try:
                 conn = fut.result()
             except psycopg2.Error:
-                future.set_exc_info(sys.exc_info())
+                future_set_exc_info(future, sys.exc_info())
                 if retry and not keep:
                     self.putconn(retry[0])
                 return
@@ -509,7 +515,7 @@ class Pool(object):
             else:
                 future.set_exception(self._no_conn_available_error)
         else:
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
         if not keep:
             self.putconn(conn)
         return
@@ -599,7 +605,7 @@ class Pool(object):
                     if conn.closed:
                         ping_future.set_exception(self._no_conn_available_error)
                     else:
-                        ping_future.set_exc_info(sys.exc_info())
+                        future_set_exc_info(ping_future, sys.exc_info())
                     self.putconn(conn)
                 else:
                     ping_future.set_result(conn)
@@ -680,7 +686,7 @@ class Connection(object):
             self.connection = psycopg2.connect(self.dsn, **kwargs)
         except psycopg2.Error:
             self.connection = None
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
             return future
 
         self.fileno = self.connection.fileno()
@@ -718,7 +724,7 @@ class Connection(object):
             state = self.connection.poll()
         except (psycopg2.Warning, psycopg2.Error):
             self.ioloop.remove_handler(self.fileno)
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
         else:
             try:
                 if state == POLL_OK:
@@ -881,7 +887,7 @@ class Connection(object):
                 if auto_rollback and not self.closed:
                     self._rollback(transaction_future, error)
                 else:
-                    transaction_future.set_exc_info(sys.exc_info())
+                    future_set_exc_info(transaction_future, sys.exc_info())
                 return
 
             try:
@@ -917,7 +923,7 @@ class Connection(object):
         try:
             cursor = fut.result()
         except Exception:
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
             return
 
         oid, array_oid = cursor.fetchone()
